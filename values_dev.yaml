@@ -1,0 +1,258 @@
+namespaceOverride: "monitor"
+grafana:
+  envFromSecret: grafana-secrets
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      # Allow discovery in all namespaces for dashboards
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+      isDefaultDatasource: true
+      label: grafana_datasource
+      labelValue: "1"
+    alerts:
+      enabled: true
+      label: grafana_alert
+      labelValue: "1"
+
+  ingress:
+    enabled: true
+    annotations:
+      alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+      alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-west-2:251757810668:certificate/52c9cde6-7cc8-4a10-8921-35e887c7e47c"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/group.name: "devops-tools"
+      alb.ingress.kubernetes.io/healthcheck-path: /api/health
+      alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "10"
+    hosts:
+      - grafana.dev.calix.com
+    extraPaths:
+      - path: "/*"
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ssl-redirect
+            port:
+              name: use-annotation
+ 
+  image:
+    repository: docker.calix.com:8083/grafana/grafana
+    tag: 9.3.1
+
+  initChownData:
+    image:
+      repository: docker.calix.com:8083/busybox 
+  imageRenderer:
+    image:
+      repository: docker.calix.com:8083/grafana/grafana-image-renderer
+  testFramework:
+    image: docker.calix.com:8083/bats/bats           
+
+  nodeSelector: 
+    app: monitor
+
+  persistence:
+    type: pvc
+    enabled: true
+    existingClaim: grafana2
+
+  grafana.ini:
+    smtp:
+      enabled: true
+      # host: ${grafana_smtp_host}
+      # user: ${grafana_smtp_user}
+      # password: ${grafana_smtp_password}
+      skip_verify: false
+      # from_address: ${garafana_smtp_from_address}
+      # from_name: ${grafana_smtp_from_name} 
+    analytics:
+      check_for_updates: true
+    grafana_net:
+      url: https://grafana.net
+    log:
+      mode: console
+    paths:
+      data: /var/lib/grafana/
+      logs: /var/log/grafana
+      plugins: /var/lib/grafana/plugins
+      provisioning: /etc/grafana/provisioning
+    server:
+      domain: grafana.dev.calix.com
+    database:
+      type: postgres
+      # host: oneclddev-zabbix.cabhefuo1n9i.us-west-2.rds.amazonaws.com:5432
+      # name: grafana
+      # user: grafana_dev
+      # password: 
+
+
+prometheus:
+  prometheusSpec:
+    retention: 10d
+    nodeSelector: 
+      app: monitor
+    resources:
+      requests:
+        memory: 30Gi
+        cpu: 3
+      limit:
+        memory: 30Gi
+        cpu: 5  
+    storageSpec:    
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2
+          resources:
+            requests:
+              storage: 300Gi
+    additionalScrapeConfigs:
+    - job_name: 'monitor/presto/jmx'
+      scrape_interval: 5s
+      static_configs:
+      - targets: ['172.30.19.79:9000']
+        labels:
+          service: presto
+          component: ingest
+    - job_name: 'alluxio master'
+      metrics_path: /metrics/prometheus/
+      scrape_interval: 10s
+      static_configs:
+      - targets: ['172.30.19.79:19999']
+        labels:
+          service: alluxio
+          component: ingest
+    - job_name: 'alluxio worker'
+      metrics_path: /metrics/prometheus/
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - '172.30.18.226:30000'
+        - '172.30.18.248:30000'
+        labels:
+          service: alluxio
+          component: ingest
+    - job_name: 'FCRDL kafka'
+      metrics_path:
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - 'fcrdlkafka1.dev.calix.com:9000'
+        - 'fcrdlkafka2.dev.calix.com:9000'
+        - 'fcrdlkafka3.dev.calix.com:9000'
+        labels:
+          service: fcrdlkafka
+          component: ingest
+    - job_name: 'cloud kafka'
+      metrics_path:
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - 'cloudkafka1.dev.calix.com:9000'
+        - 'cloudkafka2.dev.calix.com:9000'
+        - 'cloudkafka3.dev.calix.com:9000'
+        labels:
+          service: cloudkafka
+          component: ingest
+    - job_name: 'FCRDL Zookeeper'
+      metrics_path: /metrics
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - 'fcrdlzookeeper1.dev.calix.com:9000'
+        - 'fcrdlzookeeper2.dev.calix.com:9000'
+        - 'fcrdlzookeeper3.dev.calix.com:9000'
+        labels:
+          service: fcrdlzookeeper
+          component: ingest
+    - job_name: 'cloud Zookeeper'
+      metrics_path: /metrics
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - 'cloudzookeeper1.dev.calix.com:9000'
+        - 'cloudzookeeper2.dev.calix.com:9000'
+        - 'cloudzookeeper3.dev.calix.com:9000'
+        labels:
+          service: cloudzookeeper
+          component: ingest
+    - job_name: node-exporter
+      relabel_configs:
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+):.*
+        replacement: $1:9100
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: name
+      - source_labels: [__meta_kubernetes_node_label_beta_kubernetes_io_arch]
+        target_label: arch
+      - source_labels: [__meta_kubernetes_node_label_beta_kubernetes_io_instance_type]
+        target_label: instance_type
+      - source_labels: [__meta_kubernetes_node_label_kubernetes_io_os]
+        target_label: os
+      - source_labels: [__meta_kubernetes_node_label_topology_kubernetes_io_region]
+        target_label: region
+      - source_labels: [__meta_kubernetes_node_label_topology_kubernetes_io_zone]
+        target_label: zone
+      - source_labels: [__meta_kubernetes_node_label_app]
+        target_label: app
+      kubernetes_sd_configs:
+      - role: node
+    - job_name: 'WSS kafka'
+      metrics_path:
+      scrape_interval: 10s
+      static_configs:
+      - targets:
+        - 'wsskafka1.dev.calix.com:9000'
+        - 'wsskafka2.dev.calix.com:9000'
+        - 'wsskafka3.dev.calix.com:9000'
+        labels:
+          service: wsskafka
+          component: ingest
+
+
+kube-state-metrics:
+  nodeSelector: 
+    app: monitor
+
+global:
+  imageRegistry: docker.calix.com:8083
+  imagePullSecrets:
+  - name: dockersecret
+
+prometheusOperator:
+  nodeSelector: 
+    app: monitor
+  admissionWebhooks:
+    patch:
+      image:
+        repository: ingress-nginx/kube-webhook-certgen  
+      imagePullSecrets:
+      - name: dockersecret 
+  image:
+    registry: docker.calix.com:8083  
+  imagePullSecrets:
+  - name: dockersecret       
+  prometheusConfigReloader:
+    image: 
+      registry: docker.calix.com:8083
+      tag: v0.0.1
+    imagePullSecrets: [dockersecret]    
+  thanosImage:
+    registry: docker.calix.com:8083
+  prometheusSpec:
+    image:
+      registry: docker.calix.com:8083 
+  thanosRulerSpec:
+    registry:  docker.calix.com:8083 
+  alertmanagerSpec:
+    registry: docker.calix.com:8083          
+
+
