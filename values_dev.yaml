@@ -66,12 +66,7 @@ grafana:
   grafana.ini:
     smtp:
       enabled: true
-      # host: ${grafana_smtp_host}
-      # user: ${grafana_smtp_user}
-      # password: ${grafana_smtp_password}
       skip_verify: false
-      # from_address: ${garafana_smtp_from_address}
-      # from_name: ${grafana_smtp_from_name} 
     analytics:
       check_for_updates: true
     grafana_net:
@@ -87,11 +82,6 @@ grafana:
       domain: grafana.dev.calix.com
     database:
       type: postgres
-      # host: oneclddev-zabbix.cabhefuo1n9i.us-west-2.rds.amazonaws.com:5432
-      # name: grafana
-      # user: grafana_dev
-      # password: 
-
 
 prometheus:
   prometheusSpec:
